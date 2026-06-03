@@ -2,24 +2,22 @@ import os
 import json
 import requests
 from flask import Flask, request
-from telegram import Bot
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY")
 CHAT_ID = "376798209"
 
 app = Flask(__name__)
-bot = Bot(token=TELEGRAM_TOKEN)
 
-@app.route("/health", methods=["POST"])
-def health_data():
-    data = request.json
-    metrics = json.dumps(data, ensure_ascii=False, indent=2)
-    
-    prompt = f"""Ты персональный коуч по здоровью в стиле Whoop. Пиши на русском, используй эмодзи, без звёздочек. Используй ТОЛЬКО реальные цифры из данных ниже, ничего не выдумывай.
+def send_telegram(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": text})
+
+def ask_claude(data_text):
+    prompt = f"""Ты персональный коуч по здоровью в стиле Whoop. Пиши на русском, используй эмодзи, без звёздочек. Используй ТОЛЬКО реальные цифры из данных ниже, ничего не выдумывай. Если каких-то данных нет — так и напиши.
 
 Реальные данные Виктории из Apple Health:
-{metrics}
+{data_text}
 
 Напиши сводку:
 
@@ -51,9 +49,9 @@ def health_data():
 Рекомендация: [конкретные продукты]
 
 🌸 ЦИКЛ
-Фаза: [определи по дню цикла из данных]
+Фаза: [определи по дню цикла]
 Анализ: [как влияет на метаболизм и силу]
-Рекомендация: [конкретные советы для этой фазы]
+Рекомендация: [советы для этой фазы]
 
 📋 ПЛАН НА ЗАВТРА
 Тренировка: [коротко]
@@ -61,7 +59,7 @@ def health_data():
 Сон: [во сколько лечь]
 
 💡 ИНСАЙТ ДНЯ
-[одно неочевидное наблюдение из данных]"""
+[одно неочевидное наблюдение]"""
 
     response = requests.post(
         "https://api.anthropic.com/v1/messages",
@@ -76,10 +74,14 @@ def health_data():
             "messages": [{"role": "user", "content": prompt}]
         }
     )
-    
-    result = response.json()
-    answer = result["content"][0]["text"]
-    bot.send_message(chat_id=CHAT_ID, text=answer)
+    return response.json()["content"][0]["text"]
+
+@app.route("/health", methods=["POST"])
+def health_data():
+    data = request.json
+    data_text = json.dumps(data, ensure_ascii=False, indent=2)
+    answer = ask_claude(data_text)
+    send_telegram(answer)
     return "OK", 200
 
 @app.route("/", methods=["GET"])
